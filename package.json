@@ -1,0 +1,20 @@
+{
+	"name": "zkali-agents",
+	"version": "0.1.0",
+	"description": "DeepSeek multi-agent contract and runtime types",
+	"type": "module",
+	"main": "./dist/types/index.js",
+	"types": "./dist/types/index.d.ts",
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc -p tsconfig.json --noEmit"
+	},
+	"dependencies": {
+		"axios": "^1.9.0",
+		"dotenv": "^16.4.5"
+	},
+	"devDependencies": {
+		"typescript": "^5.8.3"
+	}
+}
+ 
