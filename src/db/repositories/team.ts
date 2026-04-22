@@ -25,7 +25,7 @@ function toTeamRecord(row: TeamRow): TeamRecord {
         description: row.description,
         logo: row.logo,
         content: row.content,
-        agents: JSON.parse(row.tags) as string[],
+        agents: JSON.parse(row.agents_json) as string[],
         tags: JSON.parse(row.tags) as string[],
     };
 }
@@ -74,25 +74,27 @@ export interface TeamRepository {
  * @returns {TeamRepository} 团队仓库实例
  */
 export function createTeamRepository(db: Database.Database): TeamRepository {
-    const upsertStmt = db.prepare<[string, string, string, string, string, string, string, string]>(`
-        INSERT INTO teams (id, name, description, logo, content, tags, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    const upsertStmt = db.prepare<[string, string, string, string, string, string, string, string, string]>(`
+        INSERT INTO teams (id, name, description, logo, content, agents_json, tags, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
             name        = excluded.name,
             description = excluded.description,
             logo        = excluded.logo,
             content     = excluded.content,
+            agents_json = excluded.agents_json,
             tags        = excluded.tags,
             updated_at  = excluded.updated_at
     `);
 
     const findByIdStmt = db.prepare<[string], TeamRow>(`SELECT * FROM teams WHERE id = ?`);
 
-    const updateStmt = db.prepare<[string | undefined, string | undefined, string | undefined, string | undefined, string, string]>(`
+    const updateStmt = db.prepare<[string | undefined, string | undefined, string | undefined, string | undefined, string | undefined, string, string]>(`
         UPDATE teams
         SET description = COALESCE(?, description),
             logo        = COALESCE(?, logo),
             content     = COALESCE(?, content),
+            agents_json = COALESCE(?, agents_json),
             tags        = COALESCE(?, tags),
             updated_at  = ?
         WHERE id = ?
@@ -109,6 +111,7 @@ export function createTeamRepository(db: Database.Database): TeamRepository {
                 input.description,
                 input.logo,
                 input.content,
+                JSON.stringify(input.agents ?? []),
                 JSON.stringify(input.tags ?? []),
                 now,
                 now,
@@ -129,6 +132,7 @@ export function createTeamRepository(db: Database.Database): TeamRepository {
                 input.description,
                 input.logo,
                 input.content,
+                input.agents != null ? JSON.stringify(input.agents) : undefined,
                 input.tags != null ? JSON.stringify(input.tags) : undefined,
                 now,
                 input.id,
