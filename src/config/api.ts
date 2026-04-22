@@ -7,8 +7,8 @@
  * @path src/config/api.ts
  */
 
-import type { Agents, Docs, Memorys, Roles, Skills, Tasks, Teams, Tools } from "../contract";
-import type { DeepSeekEnv } from "./env";
+import type { Agents, Docs, Memorys, Roles, Skills, Tasks, Teams, Tools } from "../contract/index.js";
+import type { DeepSeekEnv } from "./env.js";
 
 /**
  * @type Contract

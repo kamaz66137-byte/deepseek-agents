@@ -20,3 +20,15 @@ import type { Tasks } from "./tasks.js";
 
 export { CONTRACTS };
 export type { ContractType, Roles, Docs, Tools, Agents, Teams, Skills, Memorys, Tasks };
+
+// 常量枚举 re-exports（从 constant 子模块统一提升）
+export { TeamRole } from "./constant/index.js";
+export type { TeamRoleType } from "./constant/index.js";
+export { Role } from "./constant/index.js";
+export type { RoleType } from "./constant/index.js";
+export { MemoryType } from "./constant/index.js";
+export type { MemoryTypeValue } from "./constant/index.js";
+export { SkillsType } from "./constant/index.js";
+export type { SkillsTypeValue } from "./constant/index.js";
+export { ToolsType } from "./constant/index.js";
+export type { ToolsTypeValue } from "./constant/index.js";

@@ -11,10 +11,11 @@
 	},
 	"dependencies": {
 		"axios": "^1.9.0",
+		"better-sqlite3": "^12.9.0",
 		"dotenv": "^16.4.5"
 	},
 	"devDependencies": {
+		"@types/better-sqlite3": "^7.6.13",
 		"typescript": "^5.8.3"
 	}
 }
- 
