@@ -1,6 +1,6 @@
 ---
 name: 'reasoning'
-description: '基础推理技能：用于前提澄清、约束校验、假设推导与可复现结论生成。触发词：推理/reasoning、逐步推导/step-by-step、前提验证/premise check、因果链/causal chain、可复现结论/reproducible conclusion。'
+description: '基础推理技能：用于前提澄清、约束校验、假设推导与可复现结论生成，适用于推理与前提验证场景。'
 ---
 
 # reasoning Skill
@@ -9,7 +9,11 @@ description: '基础推理技能：用于前提澄清、约束校验、假设推
 
 `reasoning` 是逐级叠加链路的第 1 层：先保证问题定义、前提和约束可信，再产出可复核的推理结论，供 `analyze` 和 `logic` 复用。
 
-## 触发词（发现增强）
+## 叠加链路说明
+
+- 完整叠加方法见：[逐级推理与分层决策叠加设计方法](../logic/SKILL.md#逐级推理与分层决策叠加设计方法)。
+
+## 触发词列表
 
 - 中文：推理、逐步推导、前提验证、因果链、假设检验、结论自检
 - English: reasoning, step-by-step, premise check, causal chain, hypothesis test, consistency check

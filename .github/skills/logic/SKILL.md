@@ -1,6 +1,6 @@
 ---
 name: 'logic'
-description: '分层决策技能：基于 reasoning + analyze 结果进行多方案比较、加权评分、风险评估与决策输出。触发词：逻辑决策/logic decision、方案选择/option selection、决策矩阵/decision matrix、权衡/trade-off、评估报告/evaluation report。'
+description: '分层决策技能：基于 reasoning + analyze 结果进行多方案比较、加权评分与评估报告输出，适用于逻辑决策场景。'
 ---
 
 # logic Skill
@@ -9,7 +9,7 @@ description: '分层决策技能：基于 reasoning + analyze 结果进行多方
 
 `logic` 是逐级叠加链路的第 3 层：对 `reasoning` 与 `analyze` 产出进行分层决策，形成可审计、可复盘的最终方案选择。
 
-## 触发词（发现增强）
+## 触发词列表
 
 - 中文：逻辑决策、方案评估、决策矩阵、权重评分、取舍
 - English: logic decision, option selection, decision matrix, weighted scoring, trade-off
