@@ -30,6 +30,10 @@ function toTask(row: TaskRow): Task {
         ...(row.team_id !== null ? { teamId: row.team_id } : {}),
         dependsOn: JSON.parse(row.depends_on) as string[],
         ...(row.content !== null ? { content: row.content } : {}),
+        priority: row.priority ?? 0,
+        ...(row.timeout != null ? { timeout: row.timeout } : {}),
+        retryLimit: row.retry_limit ?? 0,
+        retryCount: row.retry_count ?? 0,
         createdAt: new Date(row.created_at),
         updatedAt: new Date(row.updated_at),
     };
@@ -81,6 +85,14 @@ export interface TaskRepository {
      * @returns {boolean} 是否更新成功
      */
     casStatus(id: string, expectedStatus: Task["status"], newStatus: Task["status"]): boolean;
+
+    /**
+     * @function incrementRetryCount
+     * @description 将任务状态重置为 pending 并递增重试计数（用于自动重试）
+     * @param {string} id - 任务 ID
+     * @returns {boolean} 是否更新成功
+     */
+    incrementRetryCount(id: string): boolean;
 }
 
 /**
@@ -90,27 +102,37 @@ export interface TaskRepository {
  * @returns {TaskRepository} 任务仓库实例
  */
 export function createTaskRepository(db: Database.Database): TaskRepository {
-    const insertStmt = db.prepare<[string, string, string, string, string, string | null, string | null, string, string | null, string, string]>(`
-        INSERT INTO tasks (id, board_id, title, description, status, assignee_id, team_id, depends_on, content, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    const insertStmt = db.prepare<[string, string, string, string, string, string | null, string | null, string, string | null, number, number | null, number, string, string]>(`
+        INSERT INTO tasks (id, board_id, title, description, status, assignee_id, team_id, depends_on, content, priority, timeout, retry_limit, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const findByIdStmt = db.prepare<[string], TaskRow>(`SELECT * FROM tasks WHERE id = ?`);
-    const listByBoardStmt = db.prepare<[string], TaskRow>(`SELECT * FROM tasks WHERE board_id = ? ORDER BY created_at ASC`);
+    const listByBoardStmt = db.prepare<[string], TaskRow>(`SELECT * FROM tasks WHERE board_id = ? ORDER BY priority DESC, created_at ASC`);
 
-    const updateStmt = db.prepare<[string | undefined, string | undefined, string | undefined, string | undefined, string | undefined, string, string]>(`
+    const updateStmt = db.prepare<[string | undefined, string | undefined, string | undefined, string | undefined, string | undefined, number | undefined, string, string]>(`
         UPDATE tasks
         SET status      = COALESCE(?, status),
             assignee_id = COALESCE(?, assignee_id),
             description = COALESCE(?, description),
             depends_on  = COALESCE(?, depends_on),
             content     = COALESCE(?, content),
+            retry_count = COALESCE(?, retry_count),
             updated_at  = ?
         WHERE id = ?
     `);
 
     const casStmt = db.prepare<[string, string, string, string]>(`
         UPDATE tasks SET status = ?, updated_at = ? WHERE id = ? AND status = ?
+    `);
+
+    const retryStmt = db.prepare<[string, string]>(`
+        UPDATE tasks
+        SET status = 'pending',
+            retry_count = retry_count + 1,
+            content = NULL,
+            updated_at = ?
+        WHERE id = ?
     `);
 
     return {
@@ -126,6 +148,9 @@ export function createTaskRepository(db: Database.Database): TaskRepository {
                 input.teamId ?? null,
                 JSON.stringify(input.dependsOn ?? []),
                 input.content ?? null,
+                input.priority ?? 0,
+                input.timeout ?? null,
+                input.retryLimit ?? 0,
                 now,
                 now,
             );
@@ -151,6 +176,7 @@ export function createTaskRepository(db: Database.Database): TaskRepository {
                 input.description,
                 input.dependsOn != null ? JSON.stringify(input.dependsOn) : undefined,
                 input.content,
+                input.retryCount,
                 now,
                 input.id,
             );
@@ -160,6 +186,11 @@ export function createTaskRepository(db: Database.Database): TaskRepository {
 
         casStatus(id: string, expectedStatus: Task["status"], newStatus: Task["status"]): boolean {
             const result = casStmt.run(newStatus, new Date().toISOString(), id, expectedStatus);
+            return result.changes > 0;
+        },
+
+        incrementRetryCount(id: string): boolean {
+            const result = retryStmt.run(new Date().toISOString(), id);
             return result.changes > 0;
         },
     };

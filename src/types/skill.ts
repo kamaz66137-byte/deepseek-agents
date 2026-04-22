@@ -13,12 +13,14 @@
  * @property {string} id - 技能唯一标识
  * @property {string} name - 技能名称
  * @property {string} description - 技能描述
+ * @property {string} [content] - 技能提示词/内容（可选）
  * @property {(input: TInput) => Promise<TOutput>} execute - 技能执行函数
  */
 export interface SkillDefinition<TInput = unknown, TOutput = unknown> {
     readonly id: string;
     readonly name: string;
     readonly description: string;
+    readonly content?: string;
     execute(input: TInput): Promise<TOutput>;
 }
 

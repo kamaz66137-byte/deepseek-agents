@@ -14,12 +14,14 @@
  * @property {string} TEAM - 团队共享记忆
  * @property {string} USER - 用户级记忆
  * @property {string} GLOBAL - 全局记忆
+ * @property {string} SEMANTIC - 语义记忆（支持关键词/语义搜索，跨 owner 检索）
  */
 export const MemoryScope = {
     AGENT: "agent",
     TEAM: "team",
     USER: "user",
     GLOBAL: "global",
+    SEMANTIC: "semantic",
 } as const;
 
 export type MemoryScope = typeof MemoryScope[keyof typeof MemoryScope];

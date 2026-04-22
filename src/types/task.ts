@@ -38,6 +38,10 @@ export type TaskStatus = typeof TaskStatus[keyof typeof TaskStatus];
  * @property {string} [teamId] - 所属团队 ID
  * @property {string[]} [dependsOn] - 前置任务 ID 列表
  * @property {string} [content] - 任务补充内容
+ * @property {number} priority - 优先级（越大越先执行，默认 0）
+ * @property {number | undefined} timeout - 超时时间（毫秒）
+ * @property {number} retryLimit - 最大自动重试次数
+ * @property {number} retryCount - 已重试次数
  * @property {Date} createdAt - 创建时间
  * @property {Date} updatedAt - 更新时间
  */
@@ -51,6 +55,10 @@ export interface Task {
     readonly teamId?: string;
     readonly dependsOn?: readonly string[];
     readonly content?: string;
+    readonly priority: number;
+    readonly timeout?: number;
+    readonly retryLimit: number;
+    readonly retryCount: number;
     readonly createdAt: Date;
     readonly updatedAt: Date;
 }
@@ -66,6 +74,9 @@ export interface Task {
  * @property {string} [teamId] - 所属团队 ID
  * @property {string[]} [dependsOn] - 前置任务 ID 列表
  * @property {string} [content] - 任务补充内容
+ * @property {number} [priority] - 优先级（默认 0）
+ * @property {number} [timeout] - 超时时间（毫秒）
+ * @property {number} [retryLimit] - 最大重试次数（默认 0）
  */
 export interface CreateTaskInput {
     readonly id: string;
@@ -76,6 +87,9 @@ export interface CreateTaskInput {
     readonly teamId?: string;
     readonly dependsOn?: readonly string[];
     readonly content?: string;
+    readonly priority?: number;
+    readonly timeout?: number;
+    readonly retryLimit?: number;
 }
 
 /**
@@ -87,6 +101,7 @@ export interface CreateTaskInput {
  * @property {string} [description] - 新描述
  * @property {string[]} [dependsOn] - 新前置任务列表
  * @property {string} [content] - 新补充内容
+ * @property {number} [retryCount] - 更新已重试次数
  */
 export interface UpdateTaskInput {
     readonly id: string;
@@ -95,6 +110,7 @@ export interface UpdateTaskInput {
     readonly description?: string;
     readonly dependsOn?: readonly string[];
     readonly content?: string;
+    readonly retryCount?: number;
 }
 
 /**
