@@ -8,6 +8,7 @@
  * @path src/db/repositories/memory.ts
  */
 
+import { randomUUID } from "crypto";
 import type Database from "better-sqlite3";
 import type { MemoryRow } from "../schema.js";
 import type { MemoryEntry, SaveMemoryInput, QueryMemoryInput, DeleteMemoryInput, MemoryQueryResult } from "../../types/index.js";
@@ -64,6 +65,14 @@ export interface MemoryRepository {
     query(input: QueryMemoryInput): MemoryQueryResult;
 
     /**
+     * @function queryByScope
+     * @description 查询指定作用域下所有记忆（跨 owner，用于语义搜索等全局检索）
+     * @param {string} scope - 作用域
+     * @returns {MemoryQueryResult} 查询结果
+     */
+    queryByScope(scope: string): MemoryQueryResult;
+
+    /**
      * @function remove
      * @description 删除指定记忆
      * @param {DeleteMemoryInput} input - 删除输入
@@ -99,6 +108,10 @@ export function createMemoryRepository(db: Database.Database): MemoryRepository 
 
     const queryByKeyStmt = db.prepare<[string, string, string], MemoryRow>(`
         SELECT * FROM memories WHERE scope = ? AND owner_id = ? AND key = ? ORDER BY updated_at DESC
+    `);
+
+    const queryByScopeStmt = db.prepare<[string], MemoryRow>(`
+        SELECT * FROM memories WHERE scope = ? ORDER BY updated_at DESC
     `);
 
     const deleteStmt = db.prepare<[string, string, string]>(`
@@ -137,6 +150,12 @@ export function createMemoryRepository(db: Database.Database): MemoryRepository 
             }
             const items = rows.map(toMemoryEntry);
             return { id: input.id, items, total: items.length };
+        },
+
+        queryByScope(scope: string): MemoryQueryResult {
+            const rows = queryByScopeStmt.all(scope);
+            const items = rows.map(toMemoryEntry);
+            return { id: randomUUID(), items, total: items.length };
         },
 
         remove(input: DeleteMemoryInput): boolean {

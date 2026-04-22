@@ -4,7 +4,8 @@
  * @since 1.0.0
  * @author zkali
  * @tags [runtime, board, team, orchestration]
- * @description 看板编排器：plan 代理创建任务看板，调度 implement/review/acceptance 代理完成全流程
+ * @description 看板编排器：plan 代理创建任务看板，调度 implement/review/acceptance 代理完成全流程。
+ *              支持优先级调度、自动重试与事件总线集成。
  * @path src/runtime/board-runner.ts
  */
 
@@ -19,6 +20,8 @@ import type { Task, BoardRecord } from "../types/index.js";
 import type { AgentRecord } from "../db/index.js";
 import { TeamRole } from "../contract/index.js";
 import type { Agents, Teams, TeamRoleType } from "../contract/index.js";
+import type { EventBus } from "../events/index.js";
+import { createEventBus } from "../events/index.js";
 
 /**
  * @interface BoardRunnerOptions
@@ -31,6 +34,7 @@ import type { Agents, Teams, TeamRoleType } from "../contract/index.js";
  * @property {Agents[]} agents - 团队所有 Agent 契约列表
  * @property {number} [maxInputChars] - 最大输入字符数
  * @property {number} [pollIntervalMs] - 任务调度轮询间隔（毫秒，默认 200）
+ * @property {EventBus} [eventBus] - 外部事件总线（不传则内部创建）
  */
 export interface BoardRunnerOptions {
     readonly db: Db;
@@ -41,6 +45,7 @@ export interface BoardRunnerOptions {
     readonly agents: readonly Agents[];
     readonly maxInputChars?: number;
     readonly pollIntervalMs?: number;
+    readonly eventBus?: EventBus;
 }
 
 /**
@@ -51,6 +56,7 @@ export interface BoardRunnerOptions {
  * @property {string} description - 任务描述
  * @property {string} assigneeAlias - 执行 Agent 的 alias
  * @property {string[]} dependsOn - 前置任务 ID 列表
+ * @property {number} [priority] - 优先级（越大越先执行，默认 0）
  */
 interface PlanTaskItem {
     id: string;
@@ -58,6 +64,7 @@ interface PlanTaskItem {
     description: string;
     assigneeAlias: string;
     dependsOn: string[];
+    priority?: number;
 }
 
 /**
@@ -103,7 +110,8 @@ const PLAN_SYSTEM_PROMPT = `你是一名专业的项目规划代理。
 
 /**
  * @class BoardRunner
- * @description 看板编排器，管理团队多代理协作的完整生命周期
+ * @description 看板编排器，管理团队多代理协作的完整生命周期。
+ *              支持优先级调度（priority 越大越先执行）、自动重试（retryLimit）和事件总线通知。
  */
 export class BoardRunner {
     readonly #db: Db;
@@ -114,6 +122,7 @@ export class BoardRunner {
     readonly #agents: readonly Agents[];
     readonly #pollIntervalMs: number;
     readonly #agentRunner: AgentRunner;
+    readonly #eventBus: EventBus;
 
     /**
      * @constructor
@@ -127,6 +136,7 @@ export class BoardRunner {
         this.#team = options.team;
         this.#agents = options.agents;
         this.#pollIntervalMs = options.pollIntervalMs ?? 200;
+        this.#eventBus = options.eventBus ?? createEventBus();
         this.#agentRunner = new AgentRunner({
             db: options.db,
             api: options.api,
@@ -137,6 +147,15 @@ export class BoardRunner {
 
         // 将团队和代理配置持久化到 DB
         this.#syncContracts();
+    }
+
+    /**
+     * @function events
+     * @description 获取事件总线（可用于外部订阅任务/看板事件）
+     * @returns {EventBus} 事件总线
+     */
+    get events(): EventBus {
+        return this.#eventBus;
     }
 
     /**
@@ -188,8 +207,18 @@ export class BoardRunner {
                 ...(assignee != null ? { assigneeId: assignee.id } : {}),
                 teamId: this.#team.id,
                 dependsOn: realDeps,
+                priority: item.priority ?? 0,
             });
         }
+
+        // 发布看板启动事件
+        this.#eventBus.emit({
+            type: "board:started",
+            boardId,
+            objective,
+            taskCount: planItems.length,
+            timestamp: new Date(),
+        });
 
         // 5. 调度执行循环
         await this.#schedulingLoop(boardId);
@@ -209,6 +238,9 @@ export class BoardRunner {
 
         const finalTasks = this.#db.tasks.listByBoard(boardId);
         console.log(`[BoardRunner] 执行完成，共 ${finalTasks.length} 个任务`);
+
+        // 发布看板完成事件
+        this.#eventBus.emit({ type: "board:completed", boardId, summary, timestamp: new Date() });
 
         return { board, tasks: finalTasks, summary };
     }
@@ -279,7 +311,8 @@ export class BoardRunner {
     /**
      * @function #schedulingLoop
      * @async
-     * @description 任务调度循环：持续查找可执行任务并并发执行，直至全部完成或出现失败
+     * @description 任务调度循环：持续查找可执行任务（按 priority 降序）并发执行，直至全部完成或出现失败；
+     *              对于执行失败且 retryCount < retryLimit 的任务，自动重置为 pending 并递增计数。
      * @param {string} boardId - 看板 ID
      */
     async #schedulingLoop(boardId: string): Promise<void> {
@@ -297,6 +330,7 @@ export class BoardRunner {
             if (allTerminal) break;
 
             const doneIds = new Set(tasks.filter((t) => t.status === TaskStatus.DONE).map((t) => t.id));
+            // listByBoard 已按 priority DESC + created_at ASC 排序
             const readyTasks = tasks.filter(
                 (t) =>
                     t.status === TaskStatus.PENDING &&
@@ -304,9 +338,9 @@ export class BoardRunner {
             );
 
             if (readyTasks.length === 0) {
-                // 检查是否有 in_progress 任务（等待它们完成）
                 const inProgress = tasks.some((t) => t.status === TaskStatus.IN_PROGRESS);
                 if (!inProgress) {
+                    // 没有正在执行的任务时累计空轮次，防止循环依赖导致死循环
                     emptyRounds++;
                     if (emptyRounds >= MAX_CONSECUTIVE_EMPTY) {
                         console.warn(`[BoardRunner] 调度停滞，看板 ${boardId} 存在无法执行的任务`);
@@ -319,7 +353,7 @@ export class BoardRunner {
 
             emptyRounds = 0;
 
-            // 并发执行所有就绪任务
+            // 并发执行所有就绪任务（DB 已按优先级排序）
             await Promise.all(
                 readyTasks.map(async (task) => {
                     const agentRecord = task.assigneeId
@@ -329,16 +363,65 @@ export class BoardRunner {
                     if (!agentRecord) {
                         console.error(`[BoardRunner] 任务 ${task.id} 无法找到执行代理`);
                         this.#db.tasks.update({ id: task.id, status: TaskStatus.BLOCKED });
+                        this.#eventBus.emit({
+                            type: "task:blocked",
+                            taskId: task.id,
+                            boardId,
+                            agentId: "",
+                            reason: "无法找到执行代理",
+                            timestamp: new Date(),
+                        });
                         return;
                     }
 
+                    this.#eventBus.emit({
+                        type: "task:started",
+                        taskId: task.id,
+                        boardId,
+                        agentId: agentRecord.id,
+                        timestamp: new Date(),
+                    });
+
                     try {
                         console.log(`[BoardRunner] 执行任务 "${task.title}" by ${agentRecord.alias}`);
-                        await this.#agentRunner.run(task, agentRecord);
+                        const result = await this.#agentRunner.run(task, agentRecord);
+                        this.#eventBus.emit({
+                            type: "task:done",
+                            taskId: task.id,
+                            boardId,
+                            agentId: agentRecord.id,
+                            content: result.content,
+                            timestamp: new Date(),
+                        });
                     } catch (err) {
                         const msg = err instanceof Error ? err.message : String(err);
                         console.error(`[BoardRunner] 任务 ${task.id} 执行失败: ${msg}`);
-                        // AgentRunner 已将状态设为 blocked，此处不再重复处理
+
+                        // 自动重试逻辑
+                        const freshTask = this.#db.tasks.findById(task.id);
+                        if (freshTask && freshTask.retryCount < freshTask.retryLimit) {
+                            console.log(
+                                `[BoardRunner] 任务 ${task.id} 第 ${freshTask.retryCount + 1}/${freshTask.retryLimit} 次重试`,
+                            );
+                            this.#db.tasks.incrementRetryCount(task.id);
+                            this.#eventBus.emit({
+                                type: "task:retry",
+                                taskId: task.id,
+                                boardId,
+                                retryCount: freshTask.retryCount + 1,
+                                retryLimit: freshTask.retryLimit,
+                                timestamp: new Date(),
+                            });
+                        } else {
+                            this.#eventBus.emit({
+                                type: "task:blocked",
+                                taskId: task.id,
+                                boardId,
+                                agentId: agentRecord.id,
+                                reason: msg,
+                                timestamp: new Date(),
+                            });
+                        }
                     }
                 }),
             );

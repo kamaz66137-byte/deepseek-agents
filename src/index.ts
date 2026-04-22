@@ -69,7 +69,16 @@ export type {
 
 // 数据库层
 export { createDb } from "./db/index.js";
-export type { Db, AgentRecord } from "./db/index.js";
+export type {
+    Db,
+    AgentRecord,
+    ToolBundleRepository,
+    SkillBundleRepository,
+    ToolBundleRecord,
+    SkillBundleRecord,
+    PersistedToolDefinition,
+    PersistedSkillDefinition,
+} from "./db/index.js";
 
 // API 客户端
 export { createDeepSeekClient, DeepSeekApiError } from "./api/deepseek.js";
@@ -77,6 +86,8 @@ export type {
     ChatMessage,
     ChatCompletionRequest,
     ChatCompletionResponse,
+    ChatCompletionStreamChunk,
+    StreamDelta,
     FunctionTool,
     ToolCallResponse,
     DeepSeekClient,
@@ -85,3 +96,21 @@ export type {
 // 运行时引擎
 export { ToolRegistry, SkillRegistry, MemoryManager, AgentRunner, BoardRunner } from "./runtime/index.js";
 export type { MemoryManagerOptions, AgentRunnerOptions, BoardRunnerOptions, BoardRunResult } from "./runtime/index.js";
+
+// 事件总线
+export { createEventBus } from "./events/index.js";
+export type {
+    EventBus,
+    AgentEvent,
+    AgentEventType,
+    TaskStartedEvent,
+    TaskDoneEvent,
+    TaskBlockedEvent,
+    TaskRetryEvent,
+    BoardStartedEvent,
+    BoardCompletedEvent,
+} from "./events/index.js";
+
+// HTTP API 服务器
+export { createApiServer } from "./api/server.js";
+export type { ApiServer, ApiServerOptions } from "./api/server.js";

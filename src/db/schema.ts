@@ -16,6 +16,7 @@ export const CREATE_TABLES_SQL = `
 PRAGMA journal_mode=WAL;
 PRAGMA foreign_keys=ON;
 
+
 CREATE TABLE IF NOT EXISTS teams (
   id          TEXT PRIMARY KEY,
   name        TEXT NOT NULL,
@@ -63,6 +64,26 @@ CREATE TABLE IF NOT EXISTS tasks (
   team_id     TEXT REFERENCES teams(id),
   depends_on  TEXT NOT NULL DEFAULT '[]',
   content     TEXT,
+  priority    INTEGER NOT NULL DEFAULT 0,
+  timeout     INTEGER,
+  retry_limit INTEGER NOT NULL DEFAULT 0,
+  retry_count INTEGER NOT NULL DEFAULT 0,
+  created_at  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS tool_bundles (
+  id          TEXT PRIMARY KEY,
+  bundle_name TEXT NOT NULL UNIQUE,
+  tools_json  TEXT NOT NULL DEFAULT '[]',
+  created_at  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS skill_bundles (
+  id          TEXT PRIMARY KEY,
+  bundle_name TEXT NOT NULL UNIQUE,
+  skills_json TEXT NOT NULL DEFAULT '[]',
   created_at  TEXT NOT NULL,
   updated_at  TEXT NOT NULL
 );
@@ -90,6 +111,17 @@ CREATE TABLE IF NOT EXISTS messages (
   created_at   TEXT NOT NULL
 );
 `;
+
+/**
+ * @const MIGRATE_SQL_STATEMENTS
+ * @description 向已有数据库安全追加新列的迁移语句（每条独立执行，忽略 "duplicate column" 错误）
+ */
+export const MIGRATE_SQL_STATEMENTS: readonly string[] = [
+    `ALTER TABLE tasks ADD COLUMN priority    INTEGER NOT NULL DEFAULT 0`,
+    `ALTER TABLE tasks ADD COLUMN timeout     INTEGER`,
+    `ALTER TABLE tasks ADD COLUMN retry_limit INTEGER NOT NULL DEFAULT 0`,
+    `ALTER TABLE tasks ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0`,
+];
 
 /**
  * @interface TeamRow
@@ -179,6 +211,10 @@ export interface BoardRow {
  * @property {string | null} team_id - 归属团队 ID
  * @property {string} depends_on - JSON 数组字符串
  * @property {string | null} content - 执行结果
+ * @property {number} priority - 任务优先级（越大越先执行）
+ * @property {number | null} timeout - 超时时间（毫秒）
+ * @property {number} retry_limit - 最大重试次数
+ * @property {number} retry_count - 已重试次数
  * @property {string} created_at - ISO 时间字符串
  * @property {string} updated_at - ISO 时间字符串
  */
@@ -192,6 +228,10 @@ export interface TaskRow {
     team_id: string | null;
     depends_on: string;
     content: string | null;
+    priority: number;
+    timeout: number | null;
+    retry_limit: number;
+    retry_count: number;
     created_at: string;
     updated_at: string;
 }
@@ -240,4 +280,38 @@ export interface MessageRow {
     tool_call_id: string | null;
     msg_name: string | null;
     created_at: string;
+}
+
+/**
+ * @interface ToolBundleRow
+ * @description SQLite tool_bundles 表行结构
+ * @property {string} id - 主键
+ * @property {string} bundle_name - 工具包名称（唯一）
+ * @property {string} tools_json - 工具定义 JSON 数组（序列化存储）
+ * @property {string} created_at - ISO 时间字符串
+ * @property {string} updated_at - ISO 时间字符串
+ */
+export interface ToolBundleRow {
+    id: string;
+    bundle_name: string;
+    tools_json: string;
+    created_at: string;
+    updated_at: string;
+}
+
+/**
+ * @interface SkillBundleRow
+ * @description SQLite skill_bundles 表行结构
+ * @property {string} id - 主键
+ * @property {string} bundle_name - 技能包名称（唯一）
+ * @property {string} skills_json - 技能定义 JSON 数组（序列化存储）
+ * @property {string} created_at - ISO 时间字符串
+ * @property {string} updated_at - ISO 时间字符串
+ */
+export interface SkillBundleRow {
+    id: string;
+    bundle_name: string;
+    skills_json: string;
+    created_at: string;
+    updated_at: string;
 }

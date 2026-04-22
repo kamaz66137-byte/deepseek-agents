@@ -82,6 +82,7 @@ export interface FunctionParameters {
  * @property {number} [max_tokens] - 最大 token 数
  * @property {FunctionTool[]} [tools] - 可用工具列表
  * @property {"auto" | "none"} [tool_choice] - 工具调用策略
+ * @property {boolean} [stream] - 是否启用流式输出
  */
 export interface ChatCompletionRequest {
     model: string;
@@ -90,6 +91,7 @@ export interface ChatCompletionRequest {
     max_tokens?: number;
     tools?: FunctionTool[];
     tool_choice?: "auto" | "none";
+    stream?: boolean;
 }
 
 /**
@@ -126,6 +128,35 @@ export interface ChatCompletionResponse {
 }
 
 /**
+ * @interface StreamDelta
+ * @description 流式输出增量内容
+ * @property {"assistant"} role - 消息角色（仅 assistant）
+ * @property {string} [content] - 增量文本内容
+ * @property {string} [reasoning_content] - 增量推理内容
+ * @property {ToolCallResponse[]} [tool_calls] - 工具调用增量
+ */
+export interface StreamDelta {
+    role?: "assistant";
+    content?: string;
+    reasoning_content?: string;
+    tool_calls?: ToolCallResponse[];
+}
+
+/**
+ * @interface ChatCompletionStreamChunk
+ * @description 流式 Chat Completion 单个数据块
+ * @property {string} id - 响应 ID
+ * @property {{ delta: StreamDelta; finish_reason: "stop" | "tool_calls" | "length" | null }[]} choices - 增量候选列表
+ */
+export interface ChatCompletionStreamChunk {
+    id: string;
+    choices: {
+        delta: StreamDelta;
+        finish_reason: "stop" | "tool_calls" | "length" | null;
+    }[];
+}
+
+/**
  * @class DeepSeekApiError
  * @description DeepSeek API 调用错误
  * @property {number} statusCode - HTTP 状态码
@@ -151,12 +182,22 @@ export interface DeepSeekClient {
     /**
      * @function chatCompletion
      * @async
-     * @description 调用 DeepSeek Chat Completion 接口
+     * @description 调用 DeepSeek Chat Completion 接口（非流式）
      * @param {ChatCompletionRequest} req - 请求体
      * @returns {Promise<ChatCompletionResponse>} 响应体
      * @throws {DeepSeekApiError} API 调用失败
      */
     chatCompletion(req: ChatCompletionRequest): Promise<ChatCompletionResponse>;
+
+    /**
+     * @function chatCompletionStream
+     * @async
+     * @description 调用 DeepSeek Chat Completion 接口（流式 SSE 输出）
+     * @param {ChatCompletionRequest} req - 请求体（stream 字段将被强制设为 true）
+     * @returns {AsyncIterable<ChatCompletionStreamChunk>} 流式数据块迭代器
+     * @throws {DeepSeekApiError} API 调用失败
+     */
+    chatCompletionStream(req: ChatCompletionRequest): AsyncIterable<ChatCompletionStreamChunk>;
 }
 
 /**
@@ -206,5 +247,69 @@ export function createDeepSeekClient(env: DeepSeekEnv, maxRetries = 3): DeepSeek
         throw lastError;
     }
 
-    return { chatCompletion };
+    async function* chatCompletionStream(req: ChatCompletionRequest): AsyncIterable<ChatCompletionStreamChunk> {
+        let lastError: unknown;
+        for (let attempt = 0; attempt < maxRetries; attempt++) {
+            try {
+                const response = await http.post<NodeJS.ReadableStream>(
+                    "/chat/completions",
+                    { ...req, stream: true },
+                    { responseType: "stream" },
+                );
+                const stream = response.data;
+                let buffer = "";
+                for await (const rawChunk of stream) {
+                    buffer += (rawChunk as Buffer).toString("utf8");
+                    const lines = buffer.split("\n");
+                    buffer = lines.pop() ?? "";
+                    for (const line of lines) {
+                        const trimmed = line.trim();
+                        if (!trimmed || !trimmed.startsWith("data: ")) continue;
+                        const data = trimmed.slice(6);
+                        if (data === "[DONE]") return;
+                        try {
+                            yield JSON.parse(data) as ChatCompletionStreamChunk;
+                        } catch {
+                            // 忽略格式不合法的行
+                        }
+                    }
+                }
+                // 处理 buffer 中剩余数据
+                if (buffer.trim().startsWith("data: ")) {
+                    const data = buffer.trim().slice(6);
+                    if (data && data !== "[DONE]") {
+                        try {
+                            yield JSON.parse(data) as ChatCompletionStreamChunk;
+                        } catch {
+                            // 忽略
+                        }
+                    }
+                }
+                return;
+            } catch (err) {
+                lastError = err;
+                if (axios.isAxiosError(err)) {
+                    const status = err.response?.status ?? 0;
+                    if (status === 429 || status >= 500) {
+                        const delay = Math.pow(2, attempt) * 1000;
+                        await new Promise((r) => setTimeout(r, delay));
+                        continue;
+                    }
+                    const message = (err.response?.data as { error?: { message?: string } } | undefined)?.error?.message ?? err.message;
+                    throw new DeepSeekApiError(status, message);
+                }
+                throw err;
+            }
+        }
+        if (axios.isAxiosError(lastError)) {
+            const status = lastError.response?.status ?? 0;
+            const message =
+                (lastError.response?.data as { error?: { message?: string } } | undefined)?.error?.message ??
+                lastError.message;
+            throw new DeepSeekApiError(status, `Max retries exceeded: ${message}`);
+        }
+        throw lastError;
+    }
+
+    return { chatCompletion, chatCompletionStream };
 }

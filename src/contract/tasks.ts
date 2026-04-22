@@ -22,6 +22,9 @@ import { type CONTRACTS } from "./contract.js";
  * @property {string} teamId - 所属团队 ID
  * @property {string[]} dependsOn - 前置任务 ID 列表
  * @property {string} content - 任务补充内容
+ * @property {number} priority - 优先级（越大越先执行，默认 0）
+ * @property {number} timeout - 超时时间（毫秒），超时后任务标记为 blocked
+ * @property {number} retryLimit - 最大自动重试次数（默认 0，不重试）
  */
 export interface Tasks {
     type: typeof CONTRACTS.TASKS;
@@ -34,4 +37,7 @@ export interface Tasks {
     teamId?: string;
     dependsOn?: string[];
     content?: string;
+    priority?: number;
+    timeout?: number;
+    retryLimit?: number;
 }

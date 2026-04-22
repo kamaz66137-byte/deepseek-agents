@@ -16,14 +16,18 @@ import { createBoardRepository } from "./repositories/board.js";
 import { createTaskRepository } from "./repositories/task.js";
 import { createMemoryRepository } from "./repositories/memory.js";
 import { createMessageRepository } from "./repositories/message.js";
+import { createToolBundleRepository, createSkillBundleRepository } from "./repositories/tool.js";
 import type { TeamRepository } from "./repositories/team.js";
 import type { AgentRepository } from "./repositories/agent.js";
 import type { BoardRepository } from "./repositories/board.js";
 import type { TaskRepository } from "./repositories/task.js";
 import type { MemoryRepository } from "./repositories/memory.js";
 import type { MessageRepository } from "./repositories/message.js";
+import type { ToolBundleRepository, SkillBundleRepository } from "./repositories/tool.js";
 
 export type { TeamRepository, AgentRepository, BoardRepository, TaskRepository, MemoryRepository, MessageRepository };
+export type { ToolBundleRepository, SkillBundleRepository };
+export type { ToolBundleRecord, SkillBundleRecord, PersistedToolDefinition, PersistedSkillDefinition } from "./repositories/tool.js";
 export type { AgentRecord, CreateAgentRecord } from "./repositories/agent.js";
 export type { SaveMessageInput } from "./repositories/message.js";
 
@@ -36,6 +40,8 @@ export type { SaveMessageInput } from "./repositories/message.js";
  * @property {TaskRepository} tasks - 任务仓库
  * @property {MemoryRepository} memories - 记忆仓库
  * @property {MessageRepository} messages - 消息仓库
+ * @property {ToolBundleRepository} toolBundles - 工具包持久化仓库
+ * @property {SkillBundleRepository} skillBundles - 技能包持久化仓库
  * @property {Database.Database} raw - 原始 SQLite 连接（供事务使用）
  */
 export interface Db {
@@ -45,6 +51,8 @@ export interface Db {
     readonly tasks: TaskRepository;
     readonly memories: MemoryRepository;
     readonly messages: MessageRepository;
+    readonly toolBundles: ToolBundleRepository;
+    readonly skillBundles: SkillBundleRepository;
     readonly raw: Database.Database;
 }
 
@@ -63,6 +71,8 @@ export function createDb(dbPath?: string): Db {
         tasks: createTaskRepository(raw),
         memories: createMemoryRepository(raw),
         messages: createMessageRepository(raw),
+        toolBundles: createToolBundleRepository(raw),
+        skillBundles: createSkillBundleRepository(raw),
         raw,
     };
 }

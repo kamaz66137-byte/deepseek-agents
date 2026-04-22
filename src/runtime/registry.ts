@@ -4,16 +4,19 @@
  * @since 1.0.0
  * @author zkali
  * @tags [runtime, registry, tool, skill]
- * @description 工具与技能注册表，按包名（bundle name）分组管理
+ * @description 工具与技能注册表，按包名（bundle name）分组管理。
+ *              支持运行时动态注册/注销，以及与数据库的双向同步（持久化与加载）。
  * @path src/runtime/registry.ts
  */
 
 import type { ToolDefinition, SkillDefinition } from "../types/index.js";
 import type { FunctionTool, FunctionParameters } from "../api/deepseek.js";
+import type { ToolBundleRepository, SkillBundleRepository } from "../db/index.js";
 
 /**
  * @class ToolRegistry
- * @description 工具注册表，将工具包名称映射到工具定义列表
+ * @description 工具注册表，将工具包名称映射到工具定义列表。
+ *              支持运行时动态注册/注销，以及与数据库的双向同步。
  */
 export class ToolRegistry {
     readonly #bundles: Map<string, ToolDefinition[]> = new Map();
@@ -31,6 +34,16 @@ export class ToolRegistry {
     }
 
     /**
+     * @function unregister
+     * @description 注销工具包（运行时动态卸载）
+     * @param {string} bundleName - 工具包名称
+     * @returns {boolean} 是否成功注销
+     */
+    unregister(bundleName: string): boolean {
+        return this.#bundles.delete(bundleName);
+    }
+
+    /**
      * @function getBundle
      * @description 获取指定包的工具定义列表
      * @param {string} bundleName - 工具包名称
@@ -38,6 +51,15 @@ export class ToolRegistry {
      */
     getBundle(bundleName: string): ToolDefinition[] {
         return this.#bundles.get(bundleName) ?? [];
+    }
+
+    /**
+     * @function listBundleNames
+     * @description 获取所有已注册工具包名称
+     * @returns {string[]} 工具包名称列表
+     */
+    listBundleNames(): string[] {
+        return [...this.#bundles.keys()];
     }
 
     /**
@@ -80,11 +102,44 @@ export class ToolRegistry {
             };
         });
     }
+
+    /**
+     * @function persistToDb
+     * @description 将当前所有工具包持久化到数据库
+     * @param {ToolBundleRepository} repo - 工具包仓库
+     */
+    persistToDb(repo: ToolBundleRepository): void {
+        for (const [bundleName, tools] of this.#bundles) {
+            repo.save(bundleName, tools);
+        }
+    }
+
+    /**
+     * @function loadFromDb
+     * @description 从数据库加载工具包的元信息（注意：execute 函数无法持久化，需通过 execMap 补全）
+     * @param {ToolBundleRepository} repo - 工具包仓库
+     * @param {Record<string, (input: unknown) => Promise<unknown>>} [execMap] - 工具名称 → 执行函数的映射
+     */
+    loadFromDb(repo: ToolBundleRepository, execMap: Record<string, (input: unknown) => Promise<unknown>> = {}): void {
+        const records = repo.listAll();
+        for (const record of records) {
+            const tools: ToolDefinition[] = record.tools.map((t) => ({
+                id: t.id,
+                name: t.name,
+                description: t.description,
+                parameters: t.parameters,
+                ...(t.required ? { required: t.required } : {}),
+                execute: execMap[t.name] ?? ((_input: unknown) => Promise.resolve({ error: "execute not bound" })),
+            }));
+            this.#bundles.set(record.bundleName, tools);
+        }
+    }
 }
 
 /**
  * @class SkillRegistry
- * @description 技能注册表，将技能包名称映射到技能定义列表
+ * @description 技能注册表，将技能包名称映射到技能定义列表。
+ *              支持运行时动态注册/注销，以及与数据库的双向同步。
  */
 export class SkillRegistry {
     readonly #bundles: Map<string, SkillDefinition[]> = new Map();
@@ -102,6 +157,16 @@ export class SkillRegistry {
     }
 
     /**
+     * @function unregister
+     * @description 注销技能包（运行时动态卸载）
+     * @param {string} bundleName - 技能包名称
+     * @returns {boolean} 是否成功注销
+     */
+    unregister(bundleName: string): boolean {
+        return this.#bundles.delete(bundleName);
+    }
+
+    /**
      * @function getBundle
      * @description 获取指定包的技能定义列表
      * @param {string} bundleName - 技能包名称
@@ -109,6 +174,15 @@ export class SkillRegistry {
      */
     getBundle(bundleName: string): SkillDefinition[] {
         return this.#bundles.get(bundleName) ?? [];
+    }
+
+    /**
+     * @function listBundleNames
+     * @description 获取所有已注册技能包名称
+     * @returns {string[]} 技能包名称列表
+     */
+    listBundleNames(): string[] {
+        return [...this.#bundles.keys()];
     }
 
     /**
@@ -120,5 +194,35 @@ export class SkillRegistry {
      */
     findSkill(bundleName: string, skillName: string): SkillDefinition | undefined {
         return this.getBundle(bundleName).find((s) => s.name === skillName);
+    }
+
+    /**
+     * @function persistToDb
+     * @description 将当前所有技能包持久化到数据库
+     * @param {SkillBundleRepository} repo - 技能包仓库
+     */
+    persistToDb(repo: SkillBundleRepository): void {
+        for (const [bundleName, skills] of this.#bundles) {
+            repo.save(bundleName, skills);
+        }
+    }
+
+    /**
+     * @function loadFromDb
+     * @description 从数据库加载技能包
+     * @param {SkillBundleRepository} repo - 技能包仓库
+     */
+    loadFromDb(repo: SkillBundleRepository): void {
+        const records = repo.listAll();
+        for (const record of records) {
+            const skills: SkillDefinition[] = record.skills.map((s) => ({
+                id: s.id,
+                name: s.name,
+                description: s.description,
+                ...(s.content ? { content: s.content } : {}),
+                execute: (_input: unknown) => Promise.resolve({ error: "execute not bound" }),
+            }));
+            this.#bundles.set(record.bundleName, skills);
+        }
     }
 }

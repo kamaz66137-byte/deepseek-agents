@@ -66,11 +66,12 @@ export class AgentRunner {
     /**
      * @function run
      * @async
-     * @description 执行 Agent 任务：调用 DeepSeek API，处理工具调用，返回结果
+     * @description 执行 Agent 任务：调用 DeepSeek API，处理工具调用，返回结果。
+     *              若任务设有 timeout（毫秒），超时后将任务标记为 blocked 并抛出超时错误。
      * @param {Task} task - 待执行任务
      * @param {AgentRecord} agent - 执行该任务的 Agent 记录
      * @returns {Promise<AgentRunResult>} Agent 执行结果
-     * @throws {Error} 任务执行失败时抛出错误（并将任务状态设为 blocked）
+     * @throws {Error} 任务执行失败或超时时抛出错误（并将任务状态设为 blocked）
      */
     async run(task: Task, agent: AgentRecord): Promise<AgentRunResult> {
         // 乐观锁：将任务状态 pending → in_progress
@@ -80,7 +81,18 @@ export class AgentRunner {
         }
 
         try {
-            const result = await this.#execute(task, agent);
+            let executePromise = this.#execute(task, agent);
+
+            // 超时控制
+            if (task.timeout != null && task.timeout > 0) {
+                const timeoutMs = task.timeout;
+                const timeoutPromise = new Promise<never>((_, reject) =>
+                    setTimeout(() => reject(new Error(`Task ${task.id} timed out after ${timeoutMs}ms`)), timeoutMs),
+                );
+                executePromise = Promise.race([executePromise, timeoutPromise]);
+            }
+
+            const result = await executePromise;
             // 写回执行结果
             this.#db.tasks.update({ id: task.id, status: TaskStatus.DONE, content: result.content });
             return result;
